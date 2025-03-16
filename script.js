@@ -16,23 +16,48 @@ $(document).ready(function() {
 
     function initializeTheme() {
         // Check system/stored preference for dark mode
-        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const savedTheme = localStorage.getItem('theme');
+
+        if (savedTheme === 'dark' || (!savedTheme && darkModeMediaQuery.matches)) {
             document.documentElement.classList.add('dark');
+            updateThemeIcon(true);
         } else {
             document.documentElement.classList.remove('dark');
+            updateThemeIcon(false);
         }
+
+        // Listen for system theme changes
+        darkModeMediaQuery.addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                if (e.matches) {
+                    document.documentElement.classList.add('dark');
+                    updateThemeIcon(true);
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    updateThemeIcon(false);
+                }
+            }
+        });
+    }
+
+    function updateThemeIcon(isDark) {
+        const moonIcon = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>`;
+        const sunIcon = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>`;
+        
+        $('#theme-toggle svg').html(isDark ? sunIcon : moonIcon);
     }
 
     function setupThemeToggle() {
         $('#theme-toggle').click(function() {
-            document.documentElement.classList.toggle('dark');
-            localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            updateThemeIcon(isDark);
         });
     }
 
     function setupResponsiveLayout() {
-        // Handle responsive layout adjustments
-        $(window).resize(function() {
+        function adjustLayout() {
             const width = $(window).width();
             if (width < 768) { // Mobile view
                 $('.container').addClass('mobile-view');
@@ -41,7 +66,21 @@ $(document).ready(function() {
                 $('.container').removeClass('mobile-view');
                 resetTextareaHeight();
             }
-        }).trigger('resize');
+        }
+
+        // Initial adjustment
+        adjustLayout();
+
+        // Throttled resize handler
+        let resizeTimeout;
+        $(window).on('resize', function() {
+            if (!resizeTimeout) {
+                resizeTimeout = setTimeout(function() {
+                    resizeTimeout = null;
+                    adjustLayout();
+                }, 66); // 15fps
+            }
+        });
 
         function adjustTextareaHeight() {
             $('textarea').css('height', '150px');
@@ -84,12 +123,23 @@ $(document).ready(function() {
                     <option value="unicode">Unicode Escape</option>
                 `);
             }
+
+            // Clear output when operation type changes
+            $('#output-text').val('');
         });
     }
 
     function setupConvertButtonHandler() {
         $('#convert-btn').click(async function() {
+            const btn = $(this);
+            const originalText = btn.text();
+            
             try {
+                // Show loading state
+                btn.prop('disabled', true)
+                   .addClass('loading')
+                   .text('');
+
                 const input = $('#input-text').val();
                 const operation = $('#operation-type').val();
                 const format = $('#format-type').val();
@@ -110,6 +160,11 @@ $(document).ready(function() {
                 $('#output-text').val(result);
             } catch (error) {
                 $('#output-text').val('Error: ' + error.message);
+            } finally {
+                // Reset button state
+                btn.prop('disabled', false)
+                   .removeClass('loading')
+                   .text(originalText);
             }
         });
     }
@@ -117,23 +172,37 @@ $(document).ready(function() {
     function setupCopyButtonHandler() {
         $('#copy-btn').click(function() {
             const output = $('#output-text');
-            output.select();
-            document.execCommand('copy');
+            const text = output.val();
             
-            // Visual feedback with smooth transition
-            const btn = $(this);
-            const originalText = btn.text();
-            btn.text('Copied!').addClass('copied');
+            if (text) {
+                if (navigator.clipboard && window.isSecureContext) {
+                    // Use modern clipboard API when available
+                    navigator.clipboard.writeText(text).then(() => {
+                        showCopyFeedback(this);
+                    });
+                } else {
+                    // Fallback to older method
+                    output.select();
+                    document.execCommand('copy');
+                    showCopyFeedback(this);
+                }
+            }
+        });
+
+        function showCopyFeedback(button) {
+            const btn = $(button);
+            btn.addClass('copied');
             
             setTimeout(() => {
-                btn.text(originalText).removeClass('copied');
+                btn.removeClass('copied');
             }, 1500);
-        });
+        }
     }
 
     function setupClearButtonHandler() {
         $('#clear-btn').click(function() {
             $('#input-text, #output-text').val('');
+            $('#input-text').focus();
         });
     }
 
